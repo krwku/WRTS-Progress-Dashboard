@@ -99,6 +99,19 @@ TEMPLATE_TXT = """\
 
 DEFAULT_FILE = Path(__file__).parent / "students.txt"
 
+# ─── Helpers ───────────────────────────────────────────────────────────────────
+
+def _parse_id_text(text: str) -> list[str]:
+    ids = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        sid = line.split(",")[0].split()[0]
+        if sid.isdigit() and 8 <= len(sid) <= 12:
+            ids.append(sid)
+    return ids
+
 # ─── Session state init ────────────────────────────────────────────────────────
 
 def _default_students() -> list[str]:
@@ -116,17 +129,6 @@ for key, default in [
         st.session_state[key] = default
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
-
-def _parse_id_text(text: str) -> list[str]:
-    ids = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        sid = line.split(",")[0].split()[0]
-        if sid.isdigit() and 8 <= len(sid) <= 12:
-            ids.append(sid)
-    return ids
 
 def cohort_year(sid: str) -> int:
     try:
