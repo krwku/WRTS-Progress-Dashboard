@@ -52,6 +52,12 @@ wrts-dashboard/
 ## 👥 Managing Students
 
 ### Option A: Edit students.txt and commit (permanent)
+
+**First time setup:**
+1. Copy `students.txt.example` to `students.txt`
+2. Replace example IDs with real student IDs
+3. **Keep `students.txt` local only** — it's excluded from Git for privacy
+
 ```
 6514500439
 6814500981
@@ -115,3 +121,92 @@ Consider making your GitHub repository **private** if you are tracking real stud
 Streamlit Cloud does not support background schedulers.  
 Click **"🔄 ดึงข้อมูลทั้งหมด"** in the sidebar to refresh manually,  
 or set up a GitHub Action to refresh and commit the cache periodically (advanced).
+
+---
+
+## 🖥️ Local Service Mode (Auto-Scheduled)
+
+Run the dashboard as a self-maintaining local service on a Windows PC — no manual intervention needed.
+
+### How it works
+
+```
+Windows Task Scheduler
+  ├── WRTS_FetchWeekly      → runs fetch_data.py every Monday at 06:00
+  ├── WRTS_FetchStartup     → runs fetch_data.py 60s after PC boots
+  └── WRTS_StreamlitStartup → starts Streamlit 90s after PC boots
+
+fetch_data.py  →  wrts_cache.json  ←  app.py (reads on startup)
+```
+
+### Setup (one-time, requires Admin)
+
+1. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. Run the setup script as Administrator:
+   ```powershell
+   # 1. Press Win key, type "powershell"
+   # 2. Right-click "Windows PowerShell" → "Run as administrator"
+   # 3. Paste this command (adjust path if needed):
+   powershell.exe -ExecutionPolicy Bypass -File "C:\Users\FengPC\WRTS\WRTS-Progress-Dashboard\setup_tasks.ps1"
+   ```
+   > **Note:** Double-clicking `.ps1` files opens Notepad — you must run them through PowerShell explicitly as shown above.
+
+   With custom schedule (e.g. Friday at 08:00):
+   ```powershell
+   powershell.exe -ExecutionPolicy Bypass -File "C:\Users\FengPC\WRTS\WRTS-Progress-Dashboard\setup_tasks.ps1" -WeeklyDay FRI -WeeklyTime "08:00"
+   ```
+
+3. Reboot the PC. The dashboard will start automatically.
+
+### Accessing from another PC on the same network
+
+1. On the host PC, find its local IP address:
+   ```
+   ipconfig
+   ```
+   Look for **IPv4 Address** under your active network adapter (e.g. `192.168.1.42`).
+
+2. On any other PC on the same network, open a browser and go to:
+   ```
+   http://192.168.1.42:8501
+   ```
+
+### Stopping the services
+
+```powershell
+# Open PowerShell (no Admin needed) and run:
+powershell.exe -ExecutionPolicy Bypass -File "C:\Users\FengPC\WRTS\WRTS-Progress-Dashboard\stop_services.ps1"
+```
+
+### Customising the schedule
+
+```powershell
+# Example: fetch every Friday at 08:00, use port 8502
+.\setup_tasks.ps1 -WeeklyDay FRI -WeeklyTime "08:00" -Port 8502
+```
+
+### Local files created by the service
+
+| File | Description |
+|---|---|
+| `wrts_cache.json` | Cached student data (written by `fetch_data.py`) |
+| `wrts_fetch.log` | Fetch run log (JSON Lines format, rotates at 1 MB) |
+| `.fetch.lock` | Temporary lock file (present only during a fetch run) |
+
+---
+
+## ⚠️ PDPA Data Notice
+
+`wrts_cache.json` contains **personal data** (student names and thesis progress).
+
+- **Do NOT** share, upload, or email this file.
+- **Do NOT** commit it to any Git repository (it is listed in `.gitignore`).
+- **Do NOT** store it on a cloud drive (OneDrive, Google Drive, Dropbox, etc.).
+- Keep it on the local PC only, accessible only to authorised staff.
+
+This system is designed for use on a **trusted local network** only.  
+It does not transmit student data to any service other than `https://info.grad.ku.ac.th/track/`.
