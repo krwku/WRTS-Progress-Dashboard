@@ -1,6 +1,7 @@
 """
-app.py — WRTS Progress Dashboard (Streamlit Cloud)
-Deploy at: https://share.streamlit.io
+app.py — WRTS Progress Dashboard (Local Service)
+Reads from local wrts_cache.json written by fetch_data.py.
+Run manually or via Windows Task Scheduler.
 """
 
 import streamlit as st
@@ -13,6 +14,7 @@ import io
 from pathlib import Path
 
 import tracker as tr
+from cache_utils import load_cache, cache_age_hours, save_cache
 
 # ─── Page config ───────────────────────────────────────────────────────────────
 
@@ -97,7 +99,9 @@ TEMPLATE_TXT = """\
 6814500001
 """
 
-DEFAULT_FILE = Path(__file__).parent / "students.txt"
+DEFAULT_FILE          = Path(__file__).parent / "students.txt"
+CACHE_FILE            = Path(__file__).parent / "wrts_cache.json"
+STALE_THRESHOLD_HOURS = 192  # 8 days — matches weekly fetch schedule
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -120,13 +124,35 @@ def _default_students() -> list[str]:
     return []
 
 for key, default in [
-    ("students",     _default_students()),
-    ("data",         {}),
-    ("last_updated", None),
-    ("fetching",     False),
+    ("students",              _default_students()),
+    ("data",                  {}),
+    ("last_updated",          None),
+    ("fetching",              False),
+    ("cache_meta",            None),
+    ("stale_threshold_hours", STALE_THRESHOLD_HOURS),
+    ("_cache_corrupt",        False),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
+# ── Load cache on first run ────────────────────────────────────────────────────
+
+if not st.session_state.data:
+    _cache_result = load_cache(CACHE_FILE)
+    if isinstance(_cache_result, dict):
+        # Valid cache — populate session state
+        st.session_state.data       = _cache_result.get("data", {})
+        st.session_state.cache_meta = _cache_result.get("meta")
+        _last = (_cache_result.get("meta") or {}).get("last_run")
+        if _last:
+            st.session_state.last_updated = _last
+        # Ensure students list includes all cached IDs (in case students.txt differs)
+        cached_ids = list(st.session_state.data.keys())
+        if not st.session_state.students and cached_ids:
+            st.session_state.students = cached_ids
+    elif _cache_result is False:
+        # File exists but is corrupt
+        st.session_state._cache_corrupt = True
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -140,6 +166,11 @@ def years_enrolled(sid: str) -> int:
     cy = cohort_year(sid)
     return CURRENT_BE - cy + 1 if cy else 0
 
+def has_any_records(sid: str) -> bool:
+    """Return True if the student has at least one transaction record."""
+    d = st.session_state.data.get(sid, {})
+    return bool(d.get("records"))
+
 def progress_score(sid: str) -> int:
     d = st.session_state.data.get(sid, {})
     if not d or d.get("error"):
@@ -150,6 +181,9 @@ def build_df() -> pd.DataFrame:
     rows = []
     for sid in st.session_state.students:
         d    = st.session_state.data.get(sid, {})
+        # Skip students with no transaction records
+        if d and not d.get("records"):
+            continue
         cy   = cohort_year(sid)
         score = progress_score(sid)
         row = {
@@ -196,6 +230,28 @@ def do_fetch(ids: list[str]):
     else:
         msg.success(f"✓ อัปเดต {n} นิสิต เมื่อ {st.session_state.last_updated}")
 
+    # ── Write cache after manual refresh ──────────────────────────────────────
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    meta = {
+        "last_run":       now_iso,
+        "students":       n,
+        "errors":         len(errors),
+        "status":         "success" if not errors else "partial",
+        "schema_version": 1,
+    }
+    try:
+        # Merge with existing cache to preserve records deleted from server
+        from cache_utils import merge_results_with_cache
+        existing = load_cache(CACHE_FILE)
+        if isinstance(existing, dict):
+            merged_data = merge_results_with_cache(st.session_state.data, existing)
+            st.session_state.data = merged_data
+        save_cache(CACHE_FILE, st.session_state.students, st.session_state.data, meta)
+        st.session_state.cache_meta = meta
+        st.session_state._cache_corrupt = False
+    except OSError:
+        st.warning("บันทึก cache ไม่สำเร็จ — ข้อมูลยังอยู่ใน session")
+
 
 # ─── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -209,14 +265,22 @@ with st.sidebar:
 
     st.markdown(f"**นิสิตในระบบ:** {n_students} คน")
     st.markdown(f"**ดึงข้อมูลแล้ว:** {n_fetched}/{n_students}")
-    if st.session_state.last_updated:
+
+    # ── Cache status ──
+    meta = st.session_state.cache_meta
+    if meta:
+        st.caption(f"อัปเดตล่าสุด: {meta.get('last_run', '—')}")
+        st.caption(f"นิสิต: {meta.get('students', '—')} คน  |  ข้อผิดพลาด: {meta.get('errors', 0)}")
+        if meta.get("errors", 0) > 0:
+            st.warning(f"⚠️ {meta['errors']} รายการดึงไม่สำเร็จในรอบล่าสุด")
+    elif st.session_state.last_updated:
         st.caption(f"อัปเดต: {st.session_state.last_updated}")
     else:
-        st.caption("ยังไม่ได้ดึงข้อมูล")
+        st.caption("ยังไม่มีข้อมูล cache")
 
     st.divider()
 
-    if st.button("🔄 ดึงข้อมูลทั้งหมด", use_container_width=True,
+    if st.button("🔄 ดึงข้อมูลทั้งหมด", width='stretch',
                  disabled=(n_students == 0), type="primary"):
         do_fetch(st.session_state.students)
         st.rerun()
@@ -224,7 +288,7 @@ with st.sidebar:
     # Refresh only unfetched
     unfetched = [s for s in st.session_state.students if s not in st.session_state.data]
     if unfetched:
-        if st.button(f"⬇️ ดึงเฉพาะที่ยังไม่มีข้อมูล ({len(unfetched)})", use_container_width=True):
+        if st.button(f"⬇️ ดึงเฉพาะที่ยังไม่มีข้อมูล ({len(unfetched)})", width='stretch'):
             do_fetch(unfetched)
             st.rerun()
 
@@ -260,6 +324,19 @@ with st.sidebar:
     st.caption("ข้อมูลจาก [info.grad.ku.ac.th](https://info.grad.ku.ac.th/track/)")
     st.caption(f"BE ปัจจุบัน: {CURRENT_BE}")
 
+
+# ─── Cache status banners (shown above tabs) ───────────────────────────────────
+
+if st.session_state._cache_corrupt:
+    st.error(
+        "⚠️ ไฟล์ cache เสียหายหรืออ่านไม่ได้ — กรุณารัน: `python fetch_data.py`",
+        icon="🚨",
+    )
+elif not st.session_state.data and not CACHE_FILE.exists():
+    st.info(
+        "ℹ️ ยังไม่มีข้อมูล cache — กรุณารัน: `python fetch_data.py`  "
+        "หรือกด **🔄 ดึงข้อมูลทั้งหมด** ในแถบด้านซ้าย",
+    )
 
 # ─── Main tabs ─────────────────────────────────────────────────────────────────
 
@@ -353,11 +430,16 @@ with tab_mgmt:
 
             # Table with current data
             rows = []
+            n_hidden = 0
             for sid in st.session_state.students:
                 d  = st.session_state.data.get(sid, {})
                 cy = cohort_year(sid)
                 ye = years_enrolled(sid)
                 sc = progress_score(sid)
+                has_records = has_any_records(sid)
+                if d and not has_records:
+                    n_hidden += 1
+                    continue
                 rows.append({
                     "รหัสนิสิต":    sid,
                     "รุ่น (BE)":   cy or "?",
@@ -365,10 +447,12 @@ with tab_mgmt:
                     "ชื่อ-สกุล":   d.get("name_th") or d.get("name_en") or "—",
                     "คืบหน้า":     f"{sc}/7" if sc >= 0 else "ยังไม่ดึง",
                 })
+            if n_hidden:
+                st.caption(f"ซ่อน {n_hidden} รายการที่ไม่มีประวัติ (นิสิตจบแล้วหรือไม่มีข้อมูล)")
 
             st.dataframe(
                 pd.DataFrame(rows),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "รุ่น (BE)": st.column_config.NumberColumn(format="%d"),
@@ -400,7 +484,7 @@ with tab_dashboard:
         if st.session_state.last_updated:
             st.caption(f"ข้อมูลล่าสุด: {st.session_state.last_updated}")
     with col_h2:
-        if st.button("🔄 Refresh", use_container_width=True):
+        if st.button("🔄 Refresh", width='stretch'):
             do_fetch(st.session_state.students)
             st.rerun()
 
@@ -459,13 +543,23 @@ with tab_dashboard:
         d  = st.session_state.data.get(sid, {})
         if not d:
             continue
+        if not has_any_records(sid):
+            continue
 
         cy   = cohort_year(sid)
         ye   = years_enrolled(sid)
         name = d.get("name_en") or sid
         if d.get("name_th"):
             name += f"<br><small style='color:#64748b'>{d['name_th']}</small>"
-        name += f"<br><small class='mono' style='color:#475569'>{sid}</small>"
+        wrts_url = f"https://info.grad.ku.ac.th/track/index.php?txtSearch={sid}&SearchType=2&SubmitSearch=%E0%B8%84%E0%B9%89%E0%B8%99%E0%B8%AB%E0%B8%B2+%2F+search"
+        name += f"<br><a href='{wrts_url}' target='_blank' title='เปิด WRTS สำหรับ {sid}' style='font-family:IBM Plex Mono,monospace;font-size:0.8rem;color:#38bdf8;text-decoration:none;' ondblclick='window.open(this.href);return false;'>{sid}</a>"
+
+        # Staleness warning
+        if d.get("fetched_at"):
+            age_h = cache_age_hours(d["fetched_at"])
+            if age_h > st.session_state.stale_threshold_hours:
+                age_days = age_h / 24
+                name += f"<br><small style='color:#f59e0b' title='ข้อมูลเก่า {age_days:.0f} วัน'>⏰ ข้อมูลเก่า {age_days:.0f} วัน</small>"
 
         ms_html = ""
         sc = 0
@@ -476,18 +570,29 @@ with tab_dashboard:
                 tip_text += f": {m['latest']['result'][:60]}"
             if m.get("history"):
                 tip_text += f" (+{len(m['history'])} ครั้งก่อน)"
-            ms_html += f'<td style="text-align:center" title="{tip_text}">{icon}</td>'
+            # Escape characters that would break the HTML attribute
+            # IMPORTANT: & must be escaped first to avoid double-escaping
+            tip_safe = (tip_text
+                        .replace("&", "&amp;")
+                        .replace('"', "&quot;")
+                        .replace("'", "&#39;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace("\n", " ")
+                        .replace("\r", ""))
+            ms_html += f'<td style="text-align:center" title="{tip_safe}">{icon}</td>'
             if m["status"] == "approved":
                 sc += 1
 
         year_badge = f'<span class="year-badge">BE {cy}</span>'
+        score_color = "#10b981" if sc >= 5 else "#f59e0b" if sc >= 2 else "#ef4444"
         rows_html += (
             f"<tr>"
             f"<td>{name}</td>"
             f"<td>{year_badge}</td>"
             f"<td style='text-align:center'>ปีที่ {ye}</td>"
             f"{ms_html}"
-            f"<td style='text-align:center;font-weight:700;color:{'#10b981' if sc >= 5 else '#f59e0b' if sc >= 2 else '#ef4444'}'>{sc}/7</td>"
+            f"<td style='text-align:center;font-weight:700;color:{score_color}'>{sc}/7</td>"
             f"</tr>"
         )
 
@@ -614,7 +719,7 @@ with tab_analytics:
         margin=dict(t=30, b=10, l=10, r=10),
         height=350,
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width='stretch')
 
     # ─────────────────────────────────────────────────────────────
     # CHART 2: Milestone heatmap by cohort
@@ -654,7 +759,7 @@ with tab_analytics:
         margin=dict(t=10, b=100, l=10, r=10),
         height=max(280, len(sel_be) * 70 + 100),
     )
-    st.plotly_chart(fig_heat, use_container_width=True)
+    st.plotly_chart(fig_heat, width='stretch')
 
     # ─────────────────────────────────────────────────────────────
     # CHART 3: Individual scatter (strip plot)
@@ -698,7 +803,7 @@ with tab_analytics:
         height=400,
     )
     st.caption("เส้นสีส้มแต่ละรุ่น = ค่ากลาง (median) ของรุ่นนั้น")
-    st.plotly_chart(fig_strip, use_container_width=True)
+    st.plotly_chart(fig_strip, width='stretch')
 
     # ─────────────────────────────────────────────────────────────
     # TABLE: Students below median (need attention)
@@ -737,7 +842,7 @@ with tab_analytics:
 
         st.dataframe(
             pd.DataFrame(disp_rows),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config={
                 "ห่างจากค่ากลาง": st.column_config.TextColumn(help="คะแนนที่ต่ำกว่าค่ากลางของรุ่น"),
@@ -776,7 +881,7 @@ with tab_analytics:
 
     st.dataframe(
         pd.DataFrame(summary_rows),
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "รุ่น (BE)": st.column_config.NumberColumn(format="%d"),
