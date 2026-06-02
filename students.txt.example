@@ -1,0 +1,15 @@
+# รายชื่อนิสิต WRTS Tracker
+# หนึ่งรหัสต่อบรรทัด  |  บรรทัดที่ขึ้นต้นด้วย # จะถูกข้าม
+# แก้ไขไฟล์นี้แล้ว commit ขึ้น GitHub เพื่ออัปเดตรายชื่อ
+# หรือใช้ UI ในแอปเพื่ออัปโหลดรายชื่อแบบ session
+
+# Example student IDs - replace with real IDs after deployment
+# Format: 10-digit student ID, one per line
+
+6314500001
+6314500002
+6414500001
+6514500001
+6614500001
+6714500001
+6814500001
