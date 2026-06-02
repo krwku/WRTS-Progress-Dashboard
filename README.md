@@ -59,9 +59,9 @@ wrts-dashboard/
 3. **Keep `students.txt` local only** — it's excluded from Git for privacy
 
 ```
-6514500439
-6814500981
-6714000123
+6514500001
+6814500002
+6714000003
 ```
 One ID per line. Lines starting with `#` are ignored.
 
