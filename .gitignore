@@ -3,5 +3,15 @@ __pycache__/
 *.pyo
 .env
 *.json
-!students.txt
 .DS_Store
+
+# WRTS local service files — contain personal data, must NOT be committed
+wrts_cache.json
+wrts_fetch.log
+wrts_fetch.log.*
+.fetch.lock
+students.txt
+
+# Test and cache directories
+.pytest_cache/
+.hypothesis/
