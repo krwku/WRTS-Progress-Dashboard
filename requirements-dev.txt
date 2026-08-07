@@ -1,0 +1,5 @@
+# Test-only dependencies — not installed into the Docker image.
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   pytest -q
+hypothesis>=6.100,<6.113
+pytest>=8.0

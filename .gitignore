@@ -7,6 +7,7 @@ __pycache__/
 
 # WRTS local service files — contain personal data, must NOT be committed
 wrts_cache.json
+wrts_cache.json.tmp
 wrts_fetch.log
 wrts_fetch.log.*
 .fetch.lock
