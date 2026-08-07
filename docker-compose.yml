@@ -1,0 +1,45 @@
+services:
+  # WRTS Dashboard (Streamlit) — standalone on port 8501
+  wrts_dashboard:
+    build: .
+    container_name: wrts_streamlit
+    ports:
+      - "8501:8501"  # Direct port mapping — no reverse proxy needed
+    volumes:
+      - ./wrts_cache.json:/app/wrts_cache.json
+      - ./students.txt:/app/students.txt
+      - ./wrts_fetch.log:/app/wrts_fetch.log
+    environment:
+      - TZ=${TZ:-Asia/Bangkok}
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_FILE_WATCH_ENABLED=false
+    restart: unless-stopped
+    networks:
+      - wrts_network
+
+  # Data fetcher — runs fetch_data.py on a loop (default: weekly)
+  wrts_fetcher:
+    build: .
+    container_name: wrts_fetcher
+    command: >
+      sh -c "
+      while true; do
+        python fetch_data.py
+        echo \"Next fetch in $${FETCH_INTERVAL_SECONDS} seconds...\"
+        sleep $${FETCH_INTERVAL_SECONDS}
+      done
+      "
+    volumes:
+      - ./wrts_cache.json:/app/wrts_cache.json
+      - ./students.txt:/app/students.txt
+      - ./wrts_fetch.log:/app/wrts_fetch.log
+    environment:
+      - TZ=${TZ:-Asia/Bangkok}
+      - FETCH_INTERVAL_SECONDS=${FETCH_INTERVAL_SECONDS:-604800}
+    restart: unless-stopped
+    networks:
+      - wrts_network
+
+networks:
+  wrts_network:
+    driver: bridge

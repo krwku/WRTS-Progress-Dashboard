@@ -1,0 +1,60 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.hypothesis
+
+# Virtual environments
+venv
+env
+ENV
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs (will be mounted as volume)
+*.log
+
+# Cache (will be mounted as volume)
+wrts_cache.json
+
+# Local config (mounted as a volume at runtime)
+students.txt
+
+# Tests (not needed in the runtime image)
+tests
+requirements-dev.txt
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+README.md
+DOCKER_SETUP.md
+UPLOAD_GUIDE.md
+LICENSE
+
+# Scripts (not needed in container)
+setup_tasks.ps1
+stop_services.ps1

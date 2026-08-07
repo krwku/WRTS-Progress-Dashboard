@@ -71,7 +71,10 @@ def read_student_ids(path: str) -> list[str]:
             if not line or line.startswith("#"):
                 continue
             # Take first token (handles "id, name" or "id name" formats)
-            token = line.split(",")[0].split()[0]
+            parts = line.split(",")[0].split()
+            if not parts:
+                continue
+            token = parts[0]
             if token.isdigit() and 8 <= len(token) <= 12:
                 ids.append(token)
     return ids

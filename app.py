@@ -111,7 +111,10 @@ def _parse_id_text(text: str) -> list[str]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        sid = line.split(",")[0].split()[0]
+        parts = line.split(",")[0].split()
+        if not parts:
+            continue
+        sid = parts[0]
         if sid.isdigit() and 8 <= len(sid) <= 12:
             ids.append(sid)
     return ids
@@ -399,7 +402,7 @@ with tab_mgmt:
             "รหัสนิสิต",
             label_visibility="collapsed",
             height=180,
-            placeholder="6514500439\n6814500981\n...",
+            placeholder="6514500009\n6814500001\n...",
             help="รหัสนิสิตหนึ่งรหัสต่อบรรทัด",
         )
         if st.button("✅ บันทึกรายชื่อที่วาง"):

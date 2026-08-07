@@ -38,12 +38,22 @@ Anyone with the URL can access it — no login required (unless you add auth).
 
 ```
 wrts-dashboard/
-├── app.py              ← Streamlit app (main file)
-├── tracker.py          ← WRTS scraper module
-├── students.txt        ← Default student list (commit to update)
-├── requirements.txt    ← Python dependencies
+├── app.py                 ← Streamlit app (main file)
+├── tracker.py             ← WRTS scraper module
+├── fetch_data.py          ← Headless fetch script (writes wrts_cache.json)
+├── cache_utils.py         ← Cache load/merge/save helpers
+├── students.txt           ← Default student list (commit to update)
+├── students.txt.example   ← Template for students.txt
+├── requirements.txt       ← Runtime dependencies
+├── requirements-dev.txt   ← Test-only dependencies
+├── Dockerfile             ← Container image
+├── docker-compose.yml     ← Dashboard + scheduled fetcher services
+├── DOCKER_SETUP.md        ← Docker deployment guide
+├── setup_tasks.ps1        ← Windows Task Scheduler setup (Docker alternative)
+├── stop_services.ps1      ← Stops the scheduled tasks
+├── tests/                 ← pytest + hypothesis suite
 ├── .streamlit/
-│   └── config.toml     ← Dark theme config
+│   └── config.toml        ← Dark theme config
 └── README.md
 ```
 
@@ -108,11 +118,18 @@ MILESTONES = [
 
 ## 🔒 Privacy Note
 
-This app fetches **publicly accessible** data from the KU Graduate School WRTS system.  
-Student IDs are not stored anywhere — they only exist in Streamlit session state  
-or in the `students.txt` file you commit to your own private GitHub repository.
+This app fetches **publicly accessible** data from the KU Graduate School WRTS system.
+
+In **local service** and **Docker** modes, fetched data *is* persisted on disk in
+`wrts_cache.json`, and student IDs live in `students.txt`. Both are listed in
+`.gitignore` and `.dockerignore` (see the PDPA notice below).
 
 Consider making your GitHub repository **private** if you are tracking real students.
+To keep a real roster out of Git while leaving the file tracked upstream:
+
+```bash
+git update-index --skip-worktree students.txt
+```
 
 ---
 
@@ -124,9 +141,39 @@ or set up a GitHub Action to refresh and commit the cache periodically (advanced
 
 ---
 
-## 🖥️ Local Service Mode (Auto-Scheduled)
+## 🐳 Docker (Recommended for self-hosting)
 
-Run the dashboard as a self-maintaining local service on a Windows PC — no manual intervention needed.
+Run the dashboard and a background fetcher as two containers on any OS:
+
+```bash
+cp students.txt.example students.txt   # then edit with your student IDs
+touch wrts_cache.json wrts_fetch.log   # bind-mount targets must exist first
+docker compose up -d --build
+```
+
+Dashboard: **http://localhost:8501**
+
+Configuration (`TZ`, `FETCH_INTERVAL_SECONDS`), LAN access, health checks and
+troubleshooting are documented in **[DOCKER_SETUP.md](DOCKER_SETUP.md)**.
+
+---
+
+## 🧪 Tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -q
+```
+
+`pytest` + `hypothesis`, covering cache load/merge/save, fetch orchestration,
+locking, log rotation, and student-ID parsing.
+
+---
+
+## 🖥️ Local Service Mode (Windows Task Scheduler)
+
+An alternative to Docker: run the dashboard as a self-maintaining local service
+on a Windows PC — no manual intervention needed.
 
 ### How it works
 
@@ -151,13 +198,13 @@ fetch_data.py  →  wrts_cache.json  ←  app.py (reads on startup)
    # 1. Press Win key, type "powershell"
    # 2. Right-click "Windows PowerShell" → "Run as administrator"
    # 3. Paste this command (adjust path if needed):
-   powershell.exe -ExecutionPolicy Bypass -File "C:\Users\FengPC\WRTS\WRTS-Progress-Dashboard\setup_tasks.ps1"
+   powershell.exe -ExecutionPolicy Bypass -File "C:\path\to\WRTS-Progress-Dashboard\setup_tasks.ps1"
    ```
    > **Note:** Double-clicking `.ps1` files opens Notepad — you must run them through PowerShell explicitly as shown above.
 
    With custom schedule (e.g. Friday at 08:00):
    ```powershell
-   powershell.exe -ExecutionPolicy Bypass -File "C:\Users\FengPC\WRTS\WRTS-Progress-Dashboard\setup_tasks.ps1" -WeeklyDay FRI -WeeklyTime "08:00"
+   powershell.exe -ExecutionPolicy Bypass -File "C:\path\to\WRTS-Progress-Dashboard\setup_tasks.ps1" -WeeklyDay FRI -WeeklyTime "08:00"
    ```
 
 3. Reboot the PC. The dashboard will start automatically.
@@ -168,18 +215,18 @@ fetch_data.py  →  wrts_cache.json  ←  app.py (reads on startup)
    ```
    ipconfig
    ```
-   Look for **IPv4 Address** under your active network adapter (e.g. `192.168.1.42`).
+   Look for **IPv4 Address** under your active network adapter (e.g. `192.168.1.10`).
 
 2. On any other PC on the same network, open a browser and go to:
    ```
-   http://192.168.1.42:8501
+   http://192.168.1.10:8501
    ```
 
 ### Stopping the services
 
 ```powershell
 # Open PowerShell (no Admin needed) and run:
-powershell.exe -ExecutionPolicy Bypass -File "C:\Users\FengPC\WRTS\WRTS-Progress-Dashboard\stop_services.ps1"
+powershell.exe -ExecutionPolicy Bypass -File "C:\path\to\WRTS-Progress-Dashboard\stop_services.ps1"
 ```
 
 ### Customising the schedule
